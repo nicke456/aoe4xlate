@@ -13,9 +13,11 @@ from pathlib import Path
 
 POSITION_FILE = Path(__file__).parent / '.overlay_position.json'
 
-TRANSPARENT  = '#000001'  # color-keyed to a hole by Windows; must not appear in UI content
-MSG_BG       = '#111111'  # message bubble background (must differ from TRANSPARENT)
-DRAG_BG      = '#161616'  # drag bar — non-transparent so it can receive mouse events
+TRANSPARENT  = '#000001'  # registered as color key — kept to avoid accidental matches
+BG_COLOR     = '#020202'  # window fill: not keyed, so whole area receives mouse events;
+                           # at MIN_ALPHA it's imperceptibly faint
+MSG_BG       = '#111111'  # message bubble background
+DRAG_BG      = '#1c1c1c'  # drag / title bar
 GOLD         = '#c8a84b'
 BLUE         = '#5aa0d6'
 GREY_BORDER  = '#555555'
@@ -60,7 +62,7 @@ class OverlayWindow:
         root.wm_attributes('-topmost', True)
         root.wm_attributes('-transparentcolor', TRANSPARENT)
         root.wm_attributes('-alpha', MIN_ALPHA)  # barely visible — shows drag bar location
-        root.configure(bg=TRANSPARENT)
+        root.configure(bg=BG_COLOR)
 
         screen_h = root.winfo_screenheight()
         saved = _load_position()
@@ -78,21 +80,23 @@ class OverlayWindow:
     # ── UI construction ────────────────────────────────────────────────────
 
     def _build_ui(self):
-        outer = tk.Frame(self.root, bg=TRANSPARENT, padx=8, pady=4)
+        outer = tk.Frame(self.root, bg=BG_COLOR, padx=8, pady=4)
         outer.pack(fill=tk.BOTH, expand=True)
 
-        # Drag bar — must NOT use TRANSPARENT bg or it won't receive mouse clicks
-        drag = tk.Frame(outer, bg=DRAG_BG, height=14)
-        drag.pack(fill=tk.X, pady=(0, 4))
+        # Title / drag bar
+        drag = tk.Frame(outer, bg=DRAG_BG, height=26)
+        drag.pack(fill=tk.X, pady=(0, 6))
         drag.pack_propagate(False)
 
-        tk.Label(drag, text='AOE4 CHAT', fg='#333333', bg=DRAG_BG,
-                 font=('Segoe UI', 7), padx=4).pack(side=tk.LEFT, pady=1)
+        tk.Label(drag, text='⚔  AoE4 Chat Translator', fg=GOLD, bg=DRAG_BG,
+                 font=('Segoe UI', 9, 'bold'), padx=8).pack(side=tk.LEFT, pady=4)
 
-        close = tk.Label(drag, text='✕', fg='#333333', bg=DRAG_BG,
-                         font=('Segoe UI', 9), padx=4, cursor='hand2')
-        close.pack(side=tk.RIGHT)
-        close.bind('<Button-1>', lambda _: self.root.destroy())
+        close = tk.Label(drag, text='✕', fg='#555555', bg=DRAG_BG,
+                         font=('Segoe UI', 10), padx=8, cursor='hand2')
+        close.pack(side=tk.RIGHT, pady=0)
+        close.bind('<Enter>',    lambda _: close.configure(fg='#cc4444'))
+        close.bind('<Leave>',    lambda _: close.configure(fg='#555555'))
+        close.bind('<Button-1>', lambda _: self._on_close())
 
         for w in drag.winfo_children():
             if w is not close:
@@ -105,12 +109,12 @@ class OverlayWindow:
         # yview_moveto(1.0) keeps the view pinned to the bottom so newest messages
         # are always visible and old ones disappear above the top edge.
         self._canvas = tk.Canvas(
-            outer, bg=TRANSPARENT, highlightthickness=0, bd=0,
+            outer, bg=BG_COLOR, highlightthickness=0, bd=0,
             height=310, width=504,
         )
         self._canvas.pack(fill=tk.X)
 
-        self.chat_frame = tk.Frame(self._canvas, bg=TRANSPARENT)
+        self.chat_frame = tk.Frame(self._canvas, bg=BG_COLOR)
         self._canvas_win = self._canvas.create_window(
             0, 0, anchor='nw', window=self.chat_frame,
         )
