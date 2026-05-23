@@ -50,7 +50,7 @@ def _save_position(x: int, y: int):
 
 
 class OverlayWindow:
-    def __init__(self, ws_port: int = 8765, max_messages: int = 30):
+    def __init__(self, ws_port: int = 8765, max_messages: int = 30, hotkey: str = ""):
         self.ws_port      = ws_port
         self.max_messages = max_messages
         self._frames: list[tk.Frame] = []
@@ -58,6 +58,7 @@ class OverlayWindow:
         self._fade_job  = None
         self._hover_job = None
         self._alpha     = MIN_ALPHA
+        self._hidden    = False
 
         root = self.root = tk.Tk()
         root.overrideredirect(True)            # frameless
@@ -79,6 +80,9 @@ class OverlayWindow:
         root.bind('<ButtonRelease-1>', self._on_drag_end)
         root.protocol('WM_DELETE_WINDOW', self._on_close)
         threading.Thread(target=self._ws_thread, daemon=True).start()
+
+        if hotkey:
+            self._start_hotkey(hotkey)
 
     # ── UI construction ────────────────────────────────────────────────────
 
@@ -150,6 +154,13 @@ class OverlayWindow:
 
     def _on_leave(self, event):
         """Mouse left — cancel dwell, resume fade if hold period has expired."""
+        # tkinter fires <Leave> on the root when the pointer moves into a child
+        # widget (each widget is its own HWND on Windows).  Ignore those crossings
+        # by checking whether the pointer is still within the window's bounds.
+        rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+        rw, rh = self.root.winfo_width(), self.root.winfo_height()
+        if rx <= event.x_root < rx + rw and ry <= event.y_root < ry + rh:
+            return  # still inside — this was just a root→child crossing
         if self._hover_job:
             self.root.after_cancel(self._hover_job)
             self._hover_job = None
@@ -169,6 +180,35 @@ class OverlayWindow:
     def _on_close(self):
         _save_position(self.root.winfo_x(), self.root.winfo_y())
         self.root.destroy()
+
+    # ── Global hotkey ──────────────────────────────────────────────────────
+
+    def _start_hotkey(self, hotkey_str: str):
+        """Register a global hotkey in a background thread (keyboard hooks need a thread)."""
+        def _register():
+            try:
+                import keyboard
+                keyboard.add_hotkey(hotkey_str, self._toggle_hidden, suppress=True)
+                print(f"[overlay] Hotkey registered: {hotkey_str} — show/hide overlay")
+                keyboard.wait()  # block this thread so the hook stays alive
+            except Exception as e:
+                print(f"[overlay] Hotkey registration failed ({hotkey_str}): {e}")
+
+        threading.Thread(target=_register, daemon=True).start()
+
+    def _toggle_hidden(self):
+        """Called from the keyboard hook thread — post to the GUI thread."""
+        self.root.after(0, self._do_toggle)
+
+    def _do_toggle(self):
+        """Runs on the GUI thread: withdraw or restore the window."""
+        if self._hidden:
+            self._hidden = False
+            self.root.deiconify()
+            self.root.wm_attributes('-alpha', self._alpha)
+        else:
+            self._hidden = True
+            self.root.withdraw()
 
     # ── Message rendering ──────────────────────────────────────────────────
 
@@ -231,6 +271,8 @@ class OverlayWindow:
 
     def _show(self):
         """Snap to fully visible and restart the hold + fade timer."""
+        if self._hidden:
+            return
         if self._hold_job:
             self.root.after_cancel(self._hold_job)
         if self._fade_job:
@@ -240,14 +282,17 @@ class OverlayWindow:
         self._hold_job = self.root.after(HOLD_MS, self._fade_start)
 
     def _fade_start(self):
+        self._hold_job = None  # hold timer has fired; clear stale reference
         step = 1.0 / FADE_STEPS
         self._fade_tick(step)
 
     def _fade_tick(self, step: float):
-        self._alpha = max(0.0, self._alpha - step)
+        self._alpha = max(MIN_ALPHA, self._alpha - step)
         self.root.wm_attributes('-alpha', self._alpha)
         if self._alpha > MIN_ALPHA:
             self._fade_job = self.root.after(FADE_INTERVAL, self._fade_tick, step)
+        else:
+            self._fade_job = None  # fade complete; clear so _show() doesn't cancel a ghost ID
 
     # ── WebSocket client ───────────────────────────────────────────────────
 

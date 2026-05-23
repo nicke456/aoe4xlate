@@ -46,7 +46,7 @@ python main.py --no-overlay
 python main.py --desktop --test
 ```
 
-Drag the overlay by the thin `AOE4 CHAT` bar. Click `✕` to close.
+Drag the overlay by the title bar. Click `✕` to close. Press `Ctrl+Shift+\` (configurable) to show/hide — works even when the game has focus.
 
 ## Configuration
 
@@ -60,6 +60,7 @@ Edit `config.yaml`:
 | `deepl_api_key` | | Required for the DeepL backend. |
 | `show_own_messages` | `true` | Show your own messages in the overlay. |
 | `watch_channels` | *(all)* | Filter to specific channel numbers. Known: `16` = all-chat, `0` = post-game. |
+| `hotkey` | `ctrl+shift+\` | Global hotkey to show/hide the desktop overlay. Works even when the game has focus. Set to empty string to disable. |
 
 The DeepL API key can also be passed via environment variable: `AOE4XLATE_DEEPL_KEY`.
 

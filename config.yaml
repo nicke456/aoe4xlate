@@ -15,6 +15,7 @@ deepl_api_key: ""
 overlay_port: 8765             # WebSocket port
 overlay_http_port: 8766        # HTTP port for the browser source page
 max_messages: 20               # Number of messages visible in the overlay
+hotkey: "ctrl+shift+\\"        # Global hotkey to show/hide the desktop overlay (empty string to disable)
 
 # Log polling interval in seconds
 poll_interval: 0.25
