@@ -1,0 +1,27 @@
+# AoE4 Chat Translator Configuration
+
+# Path to AoE4 warnings.log
+# Leave empty to auto-detect from standard Windows location
+log_file: ""
+
+# Translation settings
+target_language: "en"          # BCP-47 language code for the language you want messages translated TO
+translation_backend: "google"  # "google" or "deepl"
+
+# DeepL API key (only needed if backend is "deepl")
+deepl_api_key: ""
+
+# Overlay settings
+overlay_port: 8765             # WebSocket port
+overlay_http_port: 8766        # HTTP port for the browser source page
+max_messages: 20               # Number of messages visible in the overlay
+
+# Log polling interval in seconds
+poll_interval: 0.25
+
+# Whether to show messages from yourself in the overlay
+show_own_messages: true
+
+# Channels to watch (16 = all-chat observed in practice; leave empty to watch all channels)
+# Known: 16 appears to be all-chat. Add other values here as discovered.
+watch_channels: []

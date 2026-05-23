@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+# local launch config (Claude Code / IDE)
+.claude/
+
+# virtual environments
+venv/
+.venv/
+env/
+
+# secrets / local overrides — copy config.yaml and add your keys there
+# config.yaml is committed with safe defaults; don't commit personal API keys

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AoE4 Chat Translator</title>
+<style>
+  /* #000001 is the color-key: Windows makes this exact color transparent at the OS level.
+     Message bubbles render to #000000 (different value) so they stay visible. */
+  html {
+    background: #000001;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #000001;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Panel: the whole overlay fades in/out as a unit ── */
+  #panel {
+    opacity: 0;
+    padding: 8px 12px 6px;
+    /* 90% transparent black = rgba(0,0,0,0.1) */
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
+
+  /* ── Desktop drag bar ── */
+  #titlebar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 4px 6px;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  body.desktop #titlebar { display: flex; }
+
+  #titlebar span {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 0.1em;
+  }
+
+  #close-btn {
+    -webkit-app-region: no-drag;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 2px;
+  }
+
+  #close-btn:hover { color: #cc5555; }
+
+  /* ── Chat messages ── */
+  #chat {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+  }
+
+  .msg {
+    background: rgba(0, 0, 0, 0.82);
+    border-left: 3px solid #c8a84b;
+    border-radius: 3px;
+    padding: 6px 10px;
+    max-width: 520px;
+    animation: slidein 0.2s ease;
+  }
+
+  .msg.own          { border-left-color: #5aa0d6; }
+  .msg.no-translate { border-left-color: #666; }
+
+  @keyframes slidein {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .meta {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+
+  .player {
+    font-size: 12px;
+    font-weight: 700;
+    color: #c8a84b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+  }
+
+  .msg.own .player { color: #5aa0d6; }
+
+  .channel-tag {
+    font-size: 10px;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .ts { font-size: 10px; color: #555; margin-left: auto; }
+
+  .original {
+    font-size: 13px;
+    color: #aaa;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .translated {
+    font-size: 14px;
+    color: #f0e6c8;
+    line-height: 1.4;
+    margin-top: 3px;
+    word-break: break-word;
+  }
+
+  /* tiny connection dot — only visible when panel is shown */
+  #dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #555;
+    margin-top: 5px;
+  }
+
+  #dot.connected    { background: #4a8a4a; }
+  #dot.disconnected { background: #8a4a4a; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="titlebar">
+    <span>AOE4 CHAT</span>
+    <button id="close-btn" title="Close overlay">✕</button>
+  </div>
+  <div id="chat"></div>
+  <div id="dot"></div>
+</div>
+
+<script>
+const params     = new URLSearchParams(location.search);
+const DESKTOP    = params.get('desktop') === '1';
+const WS_PORT    = parseInt(params.get('ws') || '8765', 10);
+const MAX_MSGS   = 20;
+
+// How long to stay fully visible after last message, then fade out over FADE_MS
+const HOLD_MS    = 5000;
+const FADE_MS    = 2000;
+
+if (DESKTOP) {
+  document.body.classList.add('desktop');
+  document.getElementById('close-btn').addEventListener('click', () => {
+    if (window.pywebview) window.pywebview.api.close();
+  });
+}
+
+const panel = document.getElementById('panel');
+const chat  = document.getElementById('chat');
+const dot   = document.getElementById('dot');
+
+const CHANNEL_LABELS = { 0: 'Post', 16: 'All' };
+const channelLabel = ch => CHANNEL_LABELS[ch] || `ch${ch}`;
+const fmt = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+// ── Fade logic ──────────────────────────────────────────────────────────────
+
+let holdTimer = null;
+
+function showPanel() {
+  // Snap to fully visible immediately, cancelling any in-progress fade
+  clearTimeout(holdTimer);
+  panel.style.transition = 'none';
+  panel.style.opacity    = '1';
+
+  // After HOLD_MS with no new messages, smoothly fade out over FADE_MS
+  holdTimer = setTimeout(() => {
+    panel.style.transition = `opacity ${FADE_MS}ms ease-out`;
+    panel.style.opacity    = '0';
+  }, HOLD_MS);
+}
+
+// ── Message rendering ───────────────────────────────────────────────────────
+
+function addMessage(data) {
+  const div = document.createElement('div');
+  div.className = 'msg' +
+    (data.is_own     ? ' own'          : '') +
+    (!data.translated ? ' no-translate' : '');
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+
+  const player = document.createElement('span');
+  player.className = 'player';
+  player.textContent = data.player_name || String(data.sender_id);
+
+  const ch = document.createElement('span');
+  ch.className = 'channel-tag';
+  ch.textContent = channelLabel(data.channel);
+
+  const ts = document.createElement('span');
+  ts.className = 'ts';
+  ts.textContent = fmt(data.timestamp);
+
+  meta.append(player, ch, ts);
+  div.appendChild(meta);
+
+  if (data.translated) {
+    const orig = document.createElement('div');
+    orig.className = 'original';
+    orig.textContent = data.raw_message;
+    div.appendChild(orig);
+
+    const tr = document.createElement('div');
+    tr.className = 'translated';
+    tr.textContent = '→ ' + data.translated;
+    div.appendChild(tr);
+  } else {
+    const plain = document.createElement('div');
+    plain.className = 'translated';
+    plain.textContent = data.raw_message;
+    div.appendChild(plain);
+  }
+
+  chat.appendChild(div);
+  while (chat.children.length > MAX_MSGS) chat.removeChild(chat.firstChild);
+
+  showPanel();  // reset visibility timer on every new message
+}
+
+// ── WebSocket ───────────────────────────────────────────────────────────────
+
+function connect() {
+  const ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+
+  ws.onopen = () => {
+    dot.className = 'connected';
+  };
+
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'chat') addMessage(d);
+    } catch { /* ignore */ }
+  };
+
+  ws.onclose = () => {
+    dot.className = 'disconnected';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+connect();
+</script>
+</body>
+</html>
