@@ -28,8 +28,9 @@ HOLD_MS       = 5000   # stay fully visible after last message
 FADE_MS       = 2000   # total fade-out duration
 FADE_STEPS    = 40     # steps in fade-out (40 × 50 ms = 2 s)
 FADE_INTERVAL = FADE_MS // FADE_STEPS
-MIN_ALPHA     = 0.30   # never fade below this — keeps the drag bar findable
-HOVER_ALPHA   = 0.92   # snap to this when mouse enters the window
+MIN_ALPHA      = 0.30   # never fade below this — keeps the drag bar findable
+HOVER_ALPHA    = 0.92   # opacity when hover is activated
+HOVER_DWELL_MS = 750    # mouse must be still for this long before hover activates
 
 CHANNEL_LABELS = {0: 'POST', 16: 'ALL'}
 
@@ -53,9 +54,10 @@ class OverlayWindow:
         self.ws_port      = ws_port
         self.max_messages = max_messages
         self._frames: list[tk.Frame] = []
-        self._hold_job = None
-        self._fade_job = None
-        self._alpha    = MIN_ALPHA
+        self._hold_job  = None
+        self._fade_job  = None
+        self._hover_job = None
+        self._alpha     = MIN_ALPHA
 
         root = self.root = tk.Tk()
         root.overrideredirect(True)            # frameless
@@ -68,11 +70,12 @@ class OverlayWindow:
         saved = _load_position()
         x = saved.get('x', 20)
         y = saved.get('y', max(0, screen_h - 420))
-        root.geometry(f'520x350+{x}+{y}')
+        root.geometry(f'390x350+{x}+{y}')
 
         self._build_ui()
-        root.bind('<Enter>', self._on_enter)
-        root.bind('<Leave>', self._on_leave)
+        root.bind('<Enter>',  self._on_motion)   # treat entry same as motion
+        root.bind('<Motion>', self._on_motion)
+        root.bind('<Leave>',  self._on_leave)
         root.bind('<ButtonRelease-1>', self._on_drag_end)
         root.protocol('WM_DELETE_WINDOW', self._on_close)
         threading.Thread(target=self._ws_thread, daemon=True).start()
@@ -110,7 +113,7 @@ class OverlayWindow:
         # are always visible and old ones disappear above the top edge.
         self._canvas = tk.Canvas(
             outer, bg=BG_COLOR, highlightthickness=0, bd=0,
-            height=310, width=504,
+            height=310, width=358,
         )
         self._canvas.pack(fill=tk.X)
 
@@ -129,8 +132,15 @@ class OverlayWindow:
         self.chat_frame.bind('<Configure>', _on_content_resize)
         self._canvas.bind('<Configure>', _on_canvas_resize)
 
-    def _on_enter(self, event):
-        """Mouse entered a non-transparent part of the window — boost opacity."""
+    def _on_motion(self, event):
+        """Any mouse movement restarts the dwell timer."""
+        if self._hover_job:
+            self.root.after_cancel(self._hover_job)
+        self._hover_job = self.root.after(HOVER_DWELL_MS, self._activate_hover)
+
+    def _activate_hover(self):
+        """Dwell timer fired — mouse has been still long enough."""
+        self._hover_job = None
         if self._fade_job:
             self.root.after_cancel(self._fade_job)
             self._fade_job = None
@@ -139,9 +149,11 @@ class OverlayWindow:
             self.root.wm_attributes('-alpha', HOVER_ALPHA)
 
     def _on_leave(self, event):
-        """Mouse left the window — resume fade if the hold period has already expired."""
+        """Mouse left — cancel dwell, resume fade if hold period has expired."""
+        if self._hover_job:
+            self.root.after_cancel(self._hover_job)
+            self._hover_job = None
         if not self._hold_job:
-            # Hold already fired; fade back down from wherever we are
             self._fade_start()
 
     def _drag_start(self, event):
@@ -199,14 +211,14 @@ class OverlayWindow:
         # Message body
         if xlat:
             tk.Label(inner_f, text=raw, fg=TEXT_DIM, bg=MSG_BG,
-                     font=('Segoe UI', 9), wraplength=460,
+                     font=('Segoe UI', 9), wraplength=330,
                      justify=tk.LEFT, anchor='w').pack(fill=tk.X)
             tk.Label(inner_f, text=f'→ {xlat}', fg=TEXT_MAIN, bg=MSG_BG,
-                     font=('Segoe UI', 10), wraplength=460,
+                     font=('Segoe UI', 10), wraplength=330,
                      justify=tk.LEFT, anchor='w').pack(fill=tk.X)
         else:
             tk.Label(inner_f, text=raw, fg=TEXT_MAIN, bg=MSG_BG,
-                     font=('Segoe UI', 10), wraplength=460,
+                     font=('Segoe UI', 10), wraplength=330,
                      justify=tk.LEFT, anchor='w').pack(fill=tk.X)
 
         self._frames.append(outer_f)
