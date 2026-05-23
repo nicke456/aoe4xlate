@@ -9,6 +9,9 @@ import json
 import threading
 import tkinter as tk
 from datetime import datetime
+from pathlib import Path
+
+POSITION_FILE = Path(__file__).parent / '.overlay_position.json'
 
 TRANSPARENT  = '#000001'  # color-keyed to a hole by Windows; must not appear in UI content
 MSG_BG       = '#111111'  # message bubble background (must differ from TRANSPARENT)
@@ -24,8 +27,23 @@ FADE_MS       = 2000   # total fade-out duration
 FADE_STEPS    = 40     # steps in fade-out (40 × 50 ms = 2 s)
 FADE_INTERVAL = FADE_MS // FADE_STEPS
 MIN_ALPHA     = 0.30   # never fade below this — keeps the drag bar findable
+HOVER_ALPHA   = 0.92   # snap to this when mouse enters the window
 
 CHANNEL_LABELS = {0: 'POST', 16: 'ALL'}
+
+
+def _load_position() -> dict:
+    try:
+        return json.loads(POSITION_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_position(x: int, y: int):
+    try:
+        POSITION_FILE.write_text(json.dumps({'x': x, 'y': y}))
+    except Exception:
+        pass
 
 
 class OverlayWindow:
@@ -45,9 +63,16 @@ class OverlayWindow:
         root.configure(bg=TRANSPARENT)
 
         screen_h = root.winfo_screenheight()
-        root.geometry(f'520x350+20+{max(0, screen_h - 420)}')
+        saved = _load_position()
+        x = saved.get('x', 20)
+        y = saved.get('y', max(0, screen_h - 420))
+        root.geometry(f'520x350+{x}+{y}')
 
         self._build_ui()
+        root.bind('<Enter>', self._on_enter)
+        root.bind('<Leave>', self._on_leave)
+        root.bind('<ButtonRelease-1>', self._on_drag_end)
+        root.protocol('WM_DELETE_WINDOW', self._on_close)
         threading.Thread(target=self._ws_thread, daemon=True).start()
 
     # ── UI construction ────────────────────────────────────────────────────
@@ -100,12 +125,34 @@ class OverlayWindow:
         self.chat_frame.bind('<Configure>', _on_content_resize)
         self._canvas.bind('<Configure>', _on_canvas_resize)
 
+    def _on_enter(self, event):
+        """Mouse entered a non-transparent part of the window — boost opacity."""
+        if self._fade_job:
+            self.root.after_cancel(self._fade_job)
+            self._fade_job = None
+        if self._alpha < HOVER_ALPHA:
+            self._alpha = HOVER_ALPHA
+            self.root.wm_attributes('-alpha', HOVER_ALPHA)
+
+    def _on_leave(self, event):
+        """Mouse left the window — resume fade if the hold period has already expired."""
+        if not self._hold_job:
+            # Hold already fired; fade back down from wherever we are
+            self._fade_start()
+
     def _drag_start(self, event):
         self._ox = event.x_root - self.root.winfo_x()
         self._oy = event.y_root - self.root.winfo_y()
 
     def _drag_move(self, event):
         self.root.geometry(f'+{event.x_root - self._ox}+{event.y_root - self._oy}')
+
+    def _on_drag_end(self, event):
+        _save_position(self.root.winfo_x(), self.root.winfo_y())
+
+    def _on_close(self):
+        _save_position(self.root.winfo_x(), self.root.winfo_y())
+        self.root.destroy()
 
     # ── Message rendering ──────────────────────────────────────────────────
 

@@ -10,5 +10,8 @@ venv/
 .venv/
 env/
 
+# saved overlay position (per-user, per-machine)
+.overlay_position.json
+
 # secrets / local overrides — copy config.yaml and add your keys there
 # config.yaml is committed with safe defaults; don't commit personal API keys
