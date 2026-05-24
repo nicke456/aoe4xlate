@@ -188,7 +188,7 @@ class OverlayWindow:
         def _register():
             try:
                 import keyboard
-                keyboard.add_hotkey(hotkey_str, self._toggle_hidden, suppress=True)
+                keyboard.add_hotkey(hotkey_str, self._toggle_hidden)
                 print(f"[overlay] Hotkey registered: {hotkey_str} — show/hide overlay")
                 keyboard.wait()  # block this thread so the hook stays alive
             except Exception as e:
