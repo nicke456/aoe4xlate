@@ -61,6 +61,9 @@ Edit `config.yaml`:
 | `show_own_messages` | `true` | Show your own messages in the overlay. |
 | `watch_channels` | *(all)* | Filter to specific channel numbers. Known: `16` = all-chat, `0` = post-game. |
 | `hotkey` | `ctrl+shift+\` | Global hotkey to show/hide the desktop overlay. Works even when the game has focus. Set to empty string to disable. |
+| `fade_enabled` | `false` | Auto-fade the overlay after messages. When `false`, the overlay stays fully visible and the hotkey is the only way to hide it. |
+| `fade_delay` | `5.0` | Seconds to stay at full opacity after the last message before fading (only when `fade_enabled` is `true`). |
+| `fade_opacity` | `0.30` | Opacity to fade down to — `0.0` is invisible, `1.0` is fully opaque (only when `fade_enabled` is `true`). |
 
 The DeepL API key can also be passed via environment variable: `AOE4XLATE_DEEPL_KEY`.
 

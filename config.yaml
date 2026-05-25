@@ -17,6 +17,12 @@ overlay_http_port: 8766        # HTTP port for the browser source page
 max_messages: 20               # Number of messages visible in the overlay
 hotkey: "ctrl+shift+\\"        # Global hotkey to show/hide the desktop overlay (empty string to disable)
 
+# Fade settings (desktop overlay only)
+# When fade_enabled is false the overlay stays fully visible until hidden with the hotkey.
+fade_enabled: false
+fade_delay: 5.0              # Seconds to stay at full opacity after the last message before fading
+fade_opacity: 0.30           # Opacity to fade down to (0.0 = invisible, 1.0 = fully opaque)
+
 # Log polling interval in seconds
 poll_interval: 0.25
 

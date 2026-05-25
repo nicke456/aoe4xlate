@@ -50,8 +50,8 @@ def _parse_line(line: str) -> Optional[ChatMessage]:
 class LogWatcher:
     """
     Polls warnings.log for new lines and calls `callback` for each parsed ChatMessage.
-    Starts reading from the end of the file so it only picks up messages from the
-    current session (not replaying the whole log on startup).
+    On startup, scans back to the beginning of the most recent match so any chat
+    that happened before the tool was launched is replayed and translated.
     """
 
     def __init__(
@@ -80,6 +80,46 @@ class LogWatcher:
             self._inode = None
         return f
 
+    def _open_at_match_start(self):
+        """Open the log and seek to the first chat line of the most recent match.
+
+        Scans the file once with readline() so f.tell() is always accurate, then
+        seeks back to where the current match_id first appeared.  If there is no
+        chat in the file yet, falls back to the end so nothing is replayed.
+        """
+        f = open(self.log_path, "r", encoding="utf-8", errors="replace")
+
+        current_match_id = None
+        match_start_pos = 0
+
+        while True:
+            pos = f.tell()
+            line = f.readline()
+            if not line:
+                break
+            m = _WS_RE.search(line)
+            if m:
+                match_id = int(m.group(6))
+                if match_id != current_match_id:
+                    current_match_id = match_id
+                    match_start_pos = pos
+
+        if current_match_id is None:
+            # No chat found — start from end (nothing to replay)
+            self._pos = f.tell()
+        else:
+            f.seek(match_start_pos)
+            self._pos = match_start_pos
+            print(f"[watcher] Replaying chat from current match ({current_match_id})")
+
+        try:
+            st = os.stat(self.log_path)
+            self._inode = st.st_ino
+        except Exception:
+            self._inode = None
+
+        return f
+
     def _check_rotated(self) -> bool:
         try:
             st = os.stat(self.log_path)
@@ -95,7 +135,7 @@ class LogWatcher:
             print(f"[watcher] Waiting for log file: {self.log_path}")
             time.sleep(2)
 
-        f = self._open_at_end()
+        f = self._open_at_match_start()
         print(f"[watcher] Watching {self.log_path}")
 
         try:

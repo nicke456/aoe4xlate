@@ -50,21 +50,28 @@ def _save_position(x: int, y: int):
 
 
 class OverlayWindow:
-    def __init__(self, ws_port: int = 8765, max_messages: int = 30, hotkey: str = ""):
-        self.ws_port      = ws_port
-        self.max_messages = max_messages
+    def __init__(self, ws_port: int = 8765, max_messages: int = 30, hotkey: str = "",
+                 fade_enabled: bool = False, fade_delay: float = 5.0,
+                 fade_opacity: float = 0.30):
+        self.ws_port        = ws_port
+        self.max_messages   = max_messages
         self._frames: list[tk.Frame] = []
-        self._hold_job  = None
-        self._fade_job  = None
-        self._hover_job = None
-        self._alpha     = MIN_ALPHA
-        self._hidden    = False
+        self._hold_job      = None
+        self._fade_job      = None
+        self._hover_job     = None
+        self._hidden        = False
+        self._fade_enabled  = fade_enabled
+        self._fade_delay_ms = int(fade_delay * 1000)
+        self._fade_opacity  = fade_opacity
+        # When fade is off the overlay is always fully visible; when on, start
+        # at the fade floor so it only lights up when a message arrives.
+        self._alpha = fade_opacity if fade_enabled else 1.0
 
         root = self.root = tk.Tk()
         root.overrideredirect(True)            # frameless
         root.wm_attributes('-topmost', True)
         root.wm_attributes('-transparentcolor', TRANSPARENT)
-        root.wm_attributes('-alpha', MIN_ALPHA)  # barely visible — shows drag bar location
+        root.wm_attributes('-alpha', self._alpha)
         root.configure(bg=BG_COLOR)
 
         screen_h = root.winfo_screenheight()
@@ -137,7 +144,9 @@ class OverlayWindow:
         self._canvas.bind('<Configure>', _on_canvas_resize)
 
     def _on_motion(self, event):
-        """Any mouse movement restarts the dwell timer."""
+        """Any mouse movement restarts the dwell timer (only relevant when fade is on)."""
+        if not self._fade_enabled:
+            return
         if self._hover_job:
             self.root.after_cancel(self._hover_job)
         self._hover_job = self.root.after(HOVER_DWELL_MS, self._activate_hover)
@@ -145,6 +154,8 @@ class OverlayWindow:
     def _activate_hover(self):
         """Dwell timer fired — mouse has been still long enough."""
         self._hover_job = None
+        if not self._fade_enabled:
+            return  # always fully visible; nothing to restore
         if self._fade_job:
             self.root.after_cancel(self._fade_job)
             self._fade_job = None
@@ -164,7 +175,7 @@ class OverlayWindow:
         if self._hover_job:
             self.root.after_cancel(self._hover_job)
             self._hover_job = None
-        if not self._hold_job:
+        if self._fade_enabled and not self._hold_job:
             self._fade_start()
 
     def _drag_start(self, event):
@@ -270,16 +281,19 @@ class OverlayWindow:
     # ── Fade logic ─────────────────────────────────────────────────────────
 
     def _show(self):
-        """Snap to fully visible and restart the hold + fade timer."""
+        """Snap to fully visible; when fade is on, restart the hold + fade timer."""
         if self._hidden:
             return
         if self._hold_job:
             self.root.after_cancel(self._hold_job)
+            self._hold_job = None
         if self._fade_job:
             self.root.after_cancel(self._fade_job)
+            self._fade_job = None
         self._alpha = 1.0
         self.root.wm_attributes('-alpha', 1.0)
-        self._hold_job = self.root.after(HOLD_MS, self._fade_start)
+        if self._fade_enabled:
+            self._hold_job = self.root.after(self._fade_delay_ms, self._fade_start)
 
     def _fade_start(self):
         self._hold_job = None  # hold timer has fired; clear stale reference
@@ -287,9 +301,9 @@ class OverlayWindow:
         self._fade_tick(step)
 
     def _fade_tick(self, step: float):
-        self._alpha = max(MIN_ALPHA, self._alpha - step)
+        self._alpha = max(self._fade_opacity, self._alpha - step)
         self.root.wm_attributes('-alpha', self._alpha)
-        if self._alpha > MIN_ALPHA:
+        if self._alpha > self._fade_opacity:
             self._fade_job = self.root.after(FADE_INTERVAL, self._fade_tick, step)
         else:
             self._fade_job = None  # fade complete; clear so _show() doesn't cancel a ghost ID

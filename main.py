@@ -74,6 +74,9 @@ def load_config(path: Path) -> dict:
     cfg.setdefault("show_own_messages", True)
     cfg.setdefault("watch_channels", [])
     cfg.setdefault("hotkey", "ctrl+shift+\\")
+    cfg.setdefault("fade_enabled", False)
+    cfg.setdefault("fade_delay", 5.0)
+    cfg.setdefault("fade_opacity", 0.30)
 
     # Environment variable overrides for secrets
     cfg["deepl_api_key"] = os.environ.get("AOE4XLATE_DEEPL_KEY", cfg["deepl_api_key"])
@@ -240,6 +243,9 @@ def _launch_desktop_window(cfg: dict):
         ws_port=cfg["overlay_port"],
         max_messages=cfg["max_messages"],
         hotkey=cfg.get("hotkey", ""),
+        fade_enabled=cfg.get("fade_enabled", False),
+        fade_delay=cfg.get("fade_delay", 5.0),
+        fade_opacity=cfg.get("fade_opacity", 0.30),
     )
     overlay.run()
 
